@@ -2,6 +2,7 @@ name: astrbot_plugin_goons
 display_name: 塔科夫三狗位置查询
 desc: 查询逃离塔科夫中Goons小队（三狗）的实时位置
 version: v1.0.0
-author: 你的名字
-repo: https://github.com/你的用户名/astrbot_plugin_goons
+author: Juhua402
+repo: https://github.com/Juhua402/astrbot_plugin_goons
 tags: [游戏, 塔科夫, 工具]
+
