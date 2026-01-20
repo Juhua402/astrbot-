@@ -4,7 +4,6 @@ from astrbot.api import logger
 import httpx
 import json
 from datetime import datetime
-import asyncio
 
 
 class GoonsPlugin(Star):
@@ -21,7 +20,7 @@ class GoonsPlugin(Star):
         
         logger.info("✅ Goons位置查询插件初始化完成")
     
-    async def _get_data_from_api(self) -> dict | None:
+    async def _get_data_from_api(self):
         try:
             timestamp = int(datetime.now().timestamp() * 1000)
             url = f"{self.API_URL}?_={timestamp}"
@@ -34,77 +33,63 @@ class GoonsPlugin(Star):
             
             response = await self.client.get(url, headers=headers)
             response.raise_for_status()
-            data = response.json()
+            return response.json()
             
-            return data
-            
-        except httpx.RequestError as e:
-            logger.error(f"请求API失败：{str(e)}")
-            return None
-        except httpx.HTTPStatusError as e:
-            logger.error(f"API返回错误状态码：{e.response.status_code}")
-            return None
-        except json.JSONDecodeError as e:
-            logger.error(f"解析JSON数据失败：{str(e)}")
-            return None
-        except Exception as e:
-            logger.error(f"获取数据时发生未知错误：{str(e)}")
+        except Exception:
             return None
     
-    def _get_map_display_name(self, api_map_name: str) -> str:
+    def _get_map_display_name(self, api_map_name):
         if " / " in api_map_name:
             return api_map_name.split(" / ")[1]
         return api_map_name
     
-    def _format_time(self, time_str: str) -> str:
+    def _format_time(self, time_str):
         try:
             dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
             return dt.strftime("%m-%d %H:%M:%S")
         except ValueError:
             return time_str
     
-    def _analyze_goons_location(self, data: dict) -> tuple[dict[str, str], dict[str, str]]:
-        pvp_latest: dict[str, str] = {}
-        pve_latest: dict[str, str] = {}
+    def _analyze_goons_location(self, data):
+        pvp_latest = {}
+        pve_latest = {}
         
         if not data:
             return pvp_latest, pve_latest
         
-        if "PVP" in data and data["PVP"]:
-            for record in data["PVP"]:
-                map_name = record.get("map", "")
-                update_time = record.get("update_time", "")
-                
-                if map_name and update_time:
-                    display_name = self._get_map_display_name(map_name)
-                    if display_name not in pvp_latest:
-                        pvp_latest[display_name] = update_time
-                    else:
-                        try:
-                            old_time = datetime.strptime(pvp_latest[display_name], "%Y-%m-%d %H:%M:%S")
-                            new_time = datetime.strptime(update_time, "%Y-%m-%d %H:%M:%S")
-                            if new_time > old_time:
-                                pvp_latest[display_name] = update_time
-                        except ValueError:
+        for record in data.get("PVP", []):
+            map_name = record.get("map", "")
+            update_time = record.get("update_time", "")
+            
+            if map_name and update_time:
+                display_name = self._get_map_display_name(map_name)
+                if display_name not in pvp_latest:
+                    pvp_latest[display_name] = update_time
+                else:
+                    try:
+                        old_time = datetime.strptime(pvp_latest[display_name], "%Y-%m-%d %H:%M:%S")
+                        new_time = datetime.strptime(update_time, "%Y-%m-%d %H:%M:%S")
+                        if new_time > old_time:
                             pvp_latest[display_name] = update_time
+                    except ValueError:
+                        pvp_latest[display_name] = update_time
         
-        if "PVE" in data and data["PVE"]:
-            for record in data["PVE"]:
-                map_name = record.get("map", "")
-                update_time = record.get("update_time", "")
-                
-                if map_name and update_time:
-                    display_name = self._get_map_display_name(map_name)
-                    if display_name not in pve_latest:
-                        pve_latest[display_name] = update_time
-                    else:
-                        try:
-                            old_time = datetime.strptime(pve_latest[display_name], "%Y-%m-%d %H:%M:%S")
-                            new_time = datetime.strptime(update_time, "%Y-%m-%d %H:%M:%S")
-                            if new_time > old_time:
-                                pve_latest[display_name] = update_time
-                        except ValueError:
+        for record in data.get("PVE", []):
+            map_name = record.get("map", "")
+            update_time = record.get("update_time", "")
+            
+            if map_name and update_time:
+                display_name = self._get_map_display_name(map_name)
+                if display_name not in pve_latest:
+                    pve_latest[display_name] = update_time
+                else:
+                    try:
+                        old_time = datetime.strptime(pve_latest[display_name], "%Y-%m-%d %H:%M:%S")
+                        new_time = datetime.strptime(update_time, "%Y-%m-%d %H:%M:%S")
+                        if new_time > old_time:
                             pve_latest[display_name] = update_time
+                    except ValueError:
+                        pve_latest[display_name] = update_time
         
         return pvp_latest, pve_latest
     
