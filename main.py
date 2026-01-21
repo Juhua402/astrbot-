@@ -1,8 +1,7 @@
 from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, StarTools
+from astrbot.api.star import Context, Star
 from astrbot.api import logger
 import httpx
-import json
 from datetime import datetime
 
 
@@ -35,7 +34,14 @@ class GoonsPlugin(Star):
             response.raise_for_status()
             return response.json()
             
-        except Exception:
+        except httpx.RequestError as e:
+            logger.warning(f"API请求失败: {e}")
+            return None
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"API返回错误状态码 {e.response.status_code}")
+            return None
+        except Exception as e:
+            logger.warning(f"获取数据时发生未知错误: {e}")
             return None
     
     def _get_map_display_name(self, api_map_name):
@@ -50,48 +56,57 @@ class GoonsPlugin(Star):
         except ValueError:
             return time_str
     
+    def _process_mode_data(self, records):
+        """处理PVP或PVE模式的数据"""
+        latest_data = {}
+        
+        for record in records:
+            map_name = record.get("map", "")
+            update_time = record.get("update_time", "")
+            
+            if map_name and update_time:
+                display_name = self._get_map_display_name(map_name)
+                
+                if display_name not in latest_data:
+                    latest_data[display_name] = update_time
+                else:
+                    # 字符串比较优化：YYYY-MM-DD HH:MM:SS格式可以直接比较
+                    if update_time > latest_data[display_name]:
+                        latest_data[display_name] = update_time
+        
+        return latest_data
+    
     def _analyze_goons_location(self, data):
-        pvp_latest = {}
-        pve_latest = {}
-        
         if not data:
-            return pvp_latest, pve_latest
+            return {}, {}
         
-        for record in data.get("PVP", []):
-            map_name = record.get("map", "")
-            update_time = record.get("update_time", "")
-            
-            if map_name and update_time:
-                display_name = self._get_map_display_name(map_name)
-                if display_name not in pvp_latest:
-                    pvp_latest[display_name] = update_time
-                else:
-                    try:
-                        old_time = datetime.strptime(pvp_latest[display_name], "%Y-%m-%d %H:%M:%S")
-                        new_time = datetime.strptime(update_time, "%Y-%m-%d %H:%M:%S")
-                        if new_time > old_time:
-                            pvp_latest[display_name] = update_time
-                    except ValueError:
-                        pvp_latest[display_name] = update_time
-        
-        for record in data.get("PVE", []):
-            map_name = record.get("map", "")
-            update_time = record.get("update_time", "")
-            
-            if map_name and update_time:
-                display_name = self._get_map_display_name(map_name)
-                if display_name not in pve_latest:
-                    pve_latest[display_name] = update_time
-                else:
-                    try:
-                        old_time = datetime.strptime(pve_latest[display_name], "%Y-%m-%d %H:%M:%S")
-                        new_time = datetime.strptime(update_time, "%Y-%m-%d %H:%M:%S")
-                        if new_time > old_time:
-                            pve_latest[display_name] = update_time
-                    except ValueError:
-                        pve_latest[display_name] = update_time
+        pvp_latest = self._process_mode_data(data.get("PVP", []))
+        pve_latest = self._process_mode_data(data.get("PVE", []))
         
         return pvp_latest, pve_latest
+    
+    def _format_location_result(self, pvp_data, pve_data):
+        """格式化位置查询结果"""
+        result = "🐺 Goons小队（三狗）最新位置：\n\n"
+        
+        result += "🎮 PVP模式：\n"
+        if pvp_data:
+            for map_name, time_str in pvp_data.items():
+                formatted_time = self._format_time(time_str)
+                result += f"  • {map_name} - {formatted_time}\n"
+        else:
+            result += "  暂无数据\n"
+        
+        result += "\n💀 PVE模式：\n"
+        if pve_data:
+            for map_name, time_str in pve_data.items():
+                formatted_time = self._format_time(time_str)
+                result += f"  • {map_name} - {formatted_time}\n"
+        else:
+            result += "  暂无数据\n"
+        
+        result += "\n📊 数据来源：eftarkov.com"
+        return result
     
     @filter.command("三狗", alias={"goons", "三狗位置", "goons位置"}, args=["event"])
     async def query_goons(self, event: AstrMessageEvent):
@@ -105,31 +120,12 @@ class GoonsPlugin(Star):
                 return
             
             pvp_latest, pve_latest = self._analyze_goons_location(data)
-            
-            result = "🐺 Goons小队（三狗）最新位置：\n\n"
-            
-            result += "🎮 PVP模式：\n"
-            if pvp_latest:
-                for map_name, time_str in pvp_latest.items():
-                    formatted_time = self._format_time(time_str)
-                    result += f"  • {map_name} - {formatted_time}\n"
-            else:
-                result += "  暂无数据\n"
-            
-            result += "\n💀 PVE模式：\n"
-            if pve_latest:
-                for map_name, time_str in pve_latest.items():
-                    formatted_time = self._format_time(time_str)
-                    result += f"  • {map_name} - {formatted_time}\n"
-            else:
-                result += "  暂无数据\n"
-            
-            result += "\n📊 数据来源：eftarkov.com"
+            result = self._format_location_result(pvp_latest, pve_latest)
             
             yield event.plain_result(result)
             
         except Exception as e:
-            logger.error(f"查询三狗位置时出错：{str(e)}")
+            logger.error(f"查询三狗位置时出错: {e}")
             yield event.plain_result("❌ 查询三狗位置时出现错误，请稍后再试")
     
     async def terminate(self):
